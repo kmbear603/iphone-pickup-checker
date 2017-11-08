@@ -156,6 +156,14 @@ namespace iPhonePickupChecker
 
             body += "<div>";
             body += "<p>";
+            body += "<small>Zip code:</small>";
+            body += "<br/>";
+            body += config.zipCode;
+            body += "</p>";
+            body += "</div>";
+
+            body += "<div>";
+            body += "<p>";
             body += "<small>Available for pickup:</small>";
             body += "<br/>";
             body += (available_count == 0 ? "Nothing" : (available_count + " models"));
