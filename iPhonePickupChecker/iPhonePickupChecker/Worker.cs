@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -94,7 +95,7 @@ namespace iPhonePickupChecker
                     if (last_availability != null)
                     {
                         // notify
-                        notify(config.notification, new_availability, config.reserveUrl);
+                        notify(last_availability, new_availability, config);
                     }
 
                     last_availability = new_availability;
@@ -107,36 +108,61 @@ namespace iPhonePickupChecker
         /// <summary>
         /// send email
         /// </summary>
-        /// <param name="notification"></param>
-        /// <param name="availability"></param>
-        /// <param name="reserveUrl"></param>
-        private static void notify(Notification notification, Availability[] availability, string reserveUrl)
+        private static void notify(Availability[] availability, Availability[] previousAvailability, Configuration config)
         {
-            // email body
+            // count number of available products
+            int available_count = 0;
+            {
+                Dictionary<string/*part number*/, HashSet<string/*carrier id*/>> table = new Dictionary<string, HashSet<string>>();
+                foreach (var ava in availability)
+                {
+                    if (!ava.isAvailable)
+                        continue;
+
+                    HashSet<string> carriers;
+                    if (table.ContainsKey(ava.product.partNumber))
+                        carriers = table[ava.product.partNumber];
+                    else
+                    {
+                        carriers = new HashSet<string>();
+                        table.Add(ava.product.partNumber, carriers);
+                    }
+
+                    if (carriers.Contains(ava.carrier.id))
+                        continue;
+
+                    carriers.Add(ava.carrier.id);
+                    available_count++;
+                }
+            }
+
+            // compose email body
 
             string body = "";
+            body += "<!DOCTYPE html>";
+            body += "<html>";
+            body += "<head>";
+            body += "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">";
+            body += "</head>";
+            body += "<body style=\"font-family: 'Arial';\">";
 
             body += "<div>";
+            body += "<p>";
             body += "<small>Time:</small>";
             body += "<br/>";
             body += (DateTime.UtcNow + TimeSpan.FromHours(8)).ToString("yyyy-MM-dd HH:mm:ss") + " HKT";
+            body += "</p>";
             body += "</div>";
 
-            body += "<br/>";
-
-            int available_count = 0;
-            foreach (var ava in availability)
-            {
-                if (ava.isAvailable)
-                    available_count++;
-            }
-
             body += "<div>";
+            body += "<p>";
             body += "<small>Available for pickup:</small>";
             body += "<br/>";
-            if (available_count == 0)
-                body += "Nothing";
-            else
+            body += (available_count == 0 ? "Nothing" : (available_count + " models"));
+            body += "</p>";
+            body += "</div>";
+
+            body += "<div>";
             {
                 Dictionary<string, Carrier> carriers = new Dictionary<string, Carrier>();
                 Dictionary<string, Product> products = new Dictionary<string, Product>();
@@ -150,44 +176,78 @@ namespace iPhonePickupChecker
                         carriers.Add(ava.carrier.id, ava.carrier);
                 }
 
+                foreach (var ava in previousAvailability)
+                {
+                    if (!products.ContainsKey(ava.product.partNumber))
+                        products.Add(ava.product.partNumber, ava.product);
+
+                    if (!carriers.ContainsKey(ava.carrier.id))
+                        carriers.Add(ava.carrier.id, ava.carrier);
+                }
+
                 foreach (var carrier in carriers.Values)
                 {
                     foreach (var product in products.Values)
                     {
+                        body += "<div>";
+                        body += "<p>";
                         body += product.name + " (" + carrier.name + ")";
                         body += "<br/>";
-                        foreach (var ava in availability)
+
+                        var ava_new_all = availability.Where(a => a.carrier.id == carrier.id && a.product.partNumber == product.partNumber && a.isAvailable).ToArray();
+                        var ava_prev_all = previousAvailability.Where(a => a.carrier.id == carrier.id && a.product.partNumber == product.partNumber && a.isAvailable).ToArray();
+
+                        bool newly_available = ava_new_all.Length > 0;
+                        bool previously_available = ava_prev_all.Length > 0;
+
+                        if (!newly_available && !previously_available)
+                            body += "Unavailable<br/>";
+                        else
                         {
-                            if (ava.isAvailable && ava.carrier.id == carrier.id && ava.product.partNumber == product.partNumber)
+                            foreach (var ava_new in ava_new_all)
                             {
-                                body += "- " + ava.store.name;
+                                var ava_prev = ava_prev_all.FirstOrDefault(a => Availability.isSameKey(ava_new, a));
+
+                                body += "- " + ava_new.store.name;
+                                if (ava_prev == null)   // newly found
+                                    body += " <small><font color=\"blue\">[new]</font></small>";
+                                body += "<br/>";
+                            }
+
+                            foreach (var ava_prev in ava_prev_all)
+                            {
+                                var ava_new = ava_new_all.FirstOrDefault(a => Availability.isSameKey(ava_prev, a));
+                                if (ava_new != null)
+                                    continue;   // no change, already outputted in the previous loop, skip
+
+                                body += "- <strike>" + ava_prev.store.name + "</strike>";
                                 body += "<br/>";
                             }
                         }
 
-                        body += "<br/>";
+                        body += "</p>";
+                        body += "</div>";
                     }
                 }
             }
             body += "</div>";
 
-            body += "<br/>";
-
             body += "<div>";
-            body += "<a href=\"" + reserveUrl + "\">Click here to reserve</a>";
+            body += "<p><a href=\"" + config.reserveUrl + "\">Click here to reserve</a></p>";
             body += "</div>";
 
-            body += "<hr/>";
+            body += "</body>";
+            body += "</html>";
 
             // send
 
             Gmail gmail = new Gmail()
             {
-                GmailId = notification.sender,
-                GmailPassword = notification.senderPassword,
-                To = notification.recipients,
+                GmailId = config.notification.sender,
+                GmailPassword = config.notification.senderPassword,
+                To = config.notification.recipients,
                 IsHtml = true,
-                Subject = "iPhone X pickup availability changed",
+                Subject = "iPhone X pickup availability " + (DateTime.UtcNow + TimeSpan.FromHours(8)).ToString("yyyy-MM-dd HH:mm") + " HKT",
                 Body = body
             };
 
