@@ -95,7 +95,7 @@ namespace iPhonePickupChecker
                     if (last_availability != null)
                     {
                         // notify
-                        notify(last_availability, new_availability, config);
+                        notify(new_availability, last_availability, config);
                     }
 
                     last_availability = new_availability;
