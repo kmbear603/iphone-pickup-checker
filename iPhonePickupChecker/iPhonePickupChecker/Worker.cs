@@ -101,7 +101,7 @@ namespace iPhonePickupChecker
                     last_availability = new_availability;
                 }
 
-                Thread.Sleep(60 * 1000);
+                Thread.Sleep(config.refreshInterval);
             }
         }
 

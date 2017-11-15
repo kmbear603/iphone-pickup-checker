@@ -25,6 +25,10 @@ namespace iPhonePickupChecker
             var json = JsonConvert.DeserializeObject<JToken>(text);
 
             notification = new Notification(json["notification"]);
+            if (json["refresh-interval"] != null)
+                refreshInterval = TimeSpan.FromSeconds(json.Value<int>("refresh-interval"));
+            else
+                refreshInterval = TimeSpan.FromMinutes(1);
             zipCode = json.Value<int>("zip-code");
             reserveUrl = json.Value<string>("reserve-url");
             carriers = json.Value<JArray>("carriers").ToArray()
@@ -44,6 +48,11 @@ namespace iPhonePickupChecker
         }
 
         public Notification notification
+        {
+            get; private set;
+        }
+
+        public TimeSpan refreshInterval
         {
             get; private set;
         }
